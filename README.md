@@ -113,4 +113,4 @@ O projeto é dividido em duas partes principais:
 
 - Processamento de no máximo 10 páginas por capítulo
 - Tempo de processamento proporcional ao tamanho do texto
-- Requer conexão com a internet para acessar a API do OpenAI 
+- Requer conexão com a internet para acessar a API do OpenAI
