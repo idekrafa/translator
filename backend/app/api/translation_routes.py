@@ -45,6 +45,7 @@ async def process_translation(
 ):
     """
     Background task to process translation and document generation.
+    Uses the batch_translate_chapters function for efficient parallel processing.
     
     Args:
         job_id: Unique job identifier
@@ -53,50 +54,31 @@ async def process_translation(
         output_format: Output document format (docx or pdf)
     """
     try:
-        # Update job status
+        # Update initial job status
         translation_jobs[job_id]["status"] = "translating"
         translation_jobs[job_id]["progress"] = 0.1
         translation_jobs[job_id]["message"] = "Iniciando tradução dos capítulos..."
         
+        # Set up progress tracking for batch translation
         total_chapters = len(chapters)
+        logger.info(f"Starting translation of {total_chapters} chapters for job {job_id}")
         
-        # Translate chapters
-        translated_chapters = []
-        for i, chapter in enumerate(chapters):
-            # Update progress for each chapter
-            chapter_num = chapter["id"]
-            progress_pct = 0.1 + (0.6 * (i / total_chapters))
-            
-            translation_jobs[job_id]["status"] = "translating"
+        # Custom progress callback to update job status during translation
+        async def update_progress(chapter_index: int, chapter_id: int):
+            progress_pct = 0.1 + (0.6 * (chapter_index / total_chapters))
             translation_jobs[job_id]["progress"] = progress_pct
-            translation_jobs[job_id]["current_chapter"] = i + 1
-            translation_jobs[job_id]["message"] = f"Traduzindo capítulo {chapter_num}/{total_chapters}..."
-            
-            try:
-                # Translate one chapter at a time
-                chapter_content = await translate_chapter(chapter["content"], target_language)
-                translated_chapters.append({
-                    "id": chapter["id"],
-                    "content": chapter_content
-                })
-                
-                # Small delay between chapters to avoid hitting rate limits
-                if i < total_chapters - 1:
-                    await asyncio.sleep(2)
-                    
-            except Exception as e:
-                if "rate limit" in str(e).lower() or "429" in str(e):
-                    translation_jobs[job_id]["message"] = f"Aguardando limite de API para o capítulo {chapter_num}. Isso pode levar alguns minutos..."
-                    logger.warning(f"Rate limit hit in chapter {chapter_num}: {str(e)}")
-                    # Wait longer before retrying
-                    await asyncio.sleep(15)
-                    # Try again with this chapter
-                    i -= 1
-                    continue
-                else:
-                    raise
+            translation_jobs[job_id]["current_chapter"] = chapter_index + 1
+            translation_jobs[job_id]["message"] = f"Traduzindo capítulo {chapter_id}/{total_chapters}..."
         
-        # Update job status
+        # Use the batch translation function with progress updates
+        translated_chapters = await batch_translate_chapters(chapters, target_language)
+        
+        # Log the translated chapters before formatting
+        chapter_ids = [chapter["id"] for chapter in translated_chapters]
+        chapter_lengths = [len(chapter["content"]) for chapter in translated_chapters]
+        logger.info(f"Translation completed for job {job_id}. Chapters: {chapter_ids}, Lengths: {chapter_lengths}")
+        
+        # Update job status for formatting phase
         translation_jobs[job_id]["status"] = "formatting"
         translation_jobs[job_id]["progress"] = 0.7
         translation_jobs[job_id]["message"] = "Formatando documento..."
@@ -107,9 +89,11 @@ async def process_translation(
         # Generate document based on requested format
         if output_format == "pdf":
             output_path = f"output/{job_id}.pdf"
+            logger.info(f"Creating PDF document with {len(translated_chapters)} chapters at {output_path}")
             file_path = create_pdf_document(translated_chapters, output_path)
         else:
             output_path = f"output/{job_id}.docx"
+            logger.info(f"Creating DOCX document with {len(translated_chapters)} chapters at {output_path}")
             file_path = create_book_document(translated_chapters, output_path)
         
         # Update job status to completed
@@ -120,16 +104,10 @@ async def process_translation(
         
     except Exception as e:
         logger.error(f"Error in translation job {job_id}: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         translation_jobs[job_id]["status"] = "error"
-        
-        # Provide more specific error messages
-        error_message = str(e)
-        if "rate limit" in error_message.lower() or "429" in error_message:
-            translation_jobs[job_id]["message"] = "Erro: Limite de API excedido. Tente novamente mais tarde ou reduza o tamanho do texto."
-        elif "api key" in error_message.lower():
-            translation_jobs[job_id]["message"] = "Erro: Problema com a chave da API. Verifique se a chave da API OpenAI está configurada corretamente."
-        else:
-            translation_jobs[job_id]["message"] = f"Erro: {error_message}"
+        translation_jobs[job_id]["message"] = f"Erro: {str(e)}"
 
 
 @router.post("/translate", response_model=TranslationResponse)
@@ -184,6 +162,7 @@ async def translate_book(
     
     # Return response with job ID
     return TranslationResponse(
+        job_id=job_id,
         status="queued",
         message="Tradução iniciada. Use o endpoint de status para verificar o progresso.",
         file_url=f"/api/translation/status/{job_id}"

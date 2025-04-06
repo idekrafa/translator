@@ -112,6 +112,16 @@ def create_book_document(translated_chapters: List[Dict[str, Any]], output_path:
     Returns:
         Path to the created document
     """
+    # Sort chapters by ID to ensure correct order regardless of input order
+    sorted_chapters = sorted(translated_chapters, key=lambda x: x["id"])
+    
+    # Enhanced logging to diagnose multi-chapter issues
+    logger.info(f"Starting DOCX creation for {len(sorted_chapters)} chapters at {output_path}")
+    
+    # Log chapter IDs being processed
+    chapter_ids = [chapter["id"] for chapter in sorted_chapters]
+    logger.info(f"Chapter IDs to be included (sorted): {chapter_ids}")
+    
     document = Document()
     
     # Set page size to 6 x 9 inches
@@ -128,9 +138,12 @@ def create_book_document(translated_chapters: List[Dict[str, Any]], output_path:
     page_number = 1
     
     # Process each chapter
-    for chapter in translated_chapters:
+    for i, chapter in enumerate(sorted_chapters):
         chapter_id = chapter["id"]
         chapter_content = chapter["content"]
+        
+        # Detailed logging for each chapter
+        logger.info(f"Processing chapter {i+1}/{len(sorted_chapters)}: ID={chapter_id}, Content length={len(chapter_content)} chars")
         
         # Add chapter title
         title_paragraph = document.add_paragraph()
@@ -141,23 +154,25 @@ def create_book_document(translated_chapters: List[Dict[str, Any]], output_path:
         
         # Divide chapter into pages
         pages = divide_text_into_pages(chapter_content)
+        logger.info(f"Chapter {chapter_id} divided into {len(pages)} pages")
         
-        for i, page_content in enumerate(pages):
+        for j, page_content in enumerate(pages):
             content_paragraph = document.add_paragraph()
             content_run = content_paragraph.add_run(page_content)
             content_run.font.size = Pt(BODY_FONT_SIZE)
             content_run.font.name = DOCX_FONT_NAME  # Use Georgia for Word docs
             
             # Apply drop cap to first paragraph of the chapter
-            if i == 0:
+            if j == 0:
                 apply_drop_cap(content_paragraph)
             
             # Add page number
             add_page_number(document, page_number)
             page_number += 1
             
-            # Add page break if not the last page
-            if i < len(pages) - 1 or chapter_id < len(translated_chapters):
+            # Add page break if not the last page of the book
+            if j < len(pages) - 1 or i < len(sorted_chapters) - 1:
+                logger.info(f"Adding page break after page {j+1} of chapter {chapter_id}")
                 document.add_page_break()
     
     # Create the output directory if it doesn't exist
@@ -167,7 +182,7 @@ def create_book_document(translated_chapters: List[Dict[str, Any]], output_path:
     
     # Save the document
     document.save(output_path)
-    logger.info(f"Book document created: {output_path}")
+    logger.info(f"Book document created successfully: {output_path}")
     
     return output_path
 
@@ -183,6 +198,16 @@ def create_pdf_document(translated_chapters: List[Dict[str, Any]], output_path: 
     Returns:
         Path to the created PDF
     """
+    # Sort chapters by ID to ensure correct order regardless of input order
+    sorted_chapters = sorted(translated_chapters, key=lambda x: x["id"])
+    
+    # Enhanced logging to diagnose multi-chapter issues
+    logger.info(f"Starting PDF creation for {len(sorted_chapters)} chapters at {output_path}")
+    
+    # Log chapter IDs being processed
+    chapter_ids = [chapter["id"] for chapter in sorted_chapters]
+    logger.info(f"Chapter IDs to be included (sorted): {chapter_ids}")
+    
     # Create output directory if needed
     output_dir = os.path.dirname(output_path)
     if output_dir and not os.path.exists(output_dir):
@@ -232,19 +257,33 @@ def create_pdf_document(translated_chapters: List[Dict[str, Any]], output_path: 
     # Build document content
     story = []
     
-    for chapter in translated_chapters:
+    # Import PageBreak here to ensure it's available
+    from reportlab.platypus import PageBreak
+    
+    for i, chapter in enumerate(sorted_chapters):
         chapter_id = chapter["id"]
         chapter_content = chapter["content"]
         
+        # Detailed logging for each chapter
+        logger.info(f"Processing chapter {i+1}/{len(sorted_chapters)}: ID={chapter_id}, Content length={len(chapter_content)} chars")
+        
         # Add chapter title
         try:
+            # Start each chapter on a new page (except the first one)
+            if i > 0:
+                logger.info(f"Adding page break before chapter {chapter_id}")
+                story.append(PageBreak())
+            
+            # Add the chapter title
             title = Paragraph(f"<para>Capítulo {chapter_id}</para>", chapter_title_style)
             story.append(title)
             story.append(Spacer(1, 0.2*inch))
             
             # Add chapter content with paragraphs
             paragraphs = chapter_content.split('\n\n')
-            for p in paragraphs:
+            logger.info(f"Chapter {chapter_id} split into {len(paragraphs)} paragraphs")
+            
+            for j, p in enumerate(paragraphs):
                 if p.strip():
                     # Escape any XML characters that might cause issues
                     p = p.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
@@ -252,16 +291,17 @@ def create_pdf_document(translated_chapters: List[Dict[str, Any]], output_path: 
                     story.append(para)
                     story.append(Spacer(1, 0.1*inch))
             
-            # Add page break between chapters
-            if chapter_id < len(translated_chapters):
-                story.append(Spacer(1, 0.5*inch))
         except Exception as e:
             logger.error(f"Error processing chapter {chapter_id}: {str(e)}")
+            # Continue processing other chapters even if one fails
+    
+    # Log the final story length
+    logger.info(f"PDF story built with {len(story)} elements")
     
     # Build the PDF
     try:
         doc.build(story)
-        logger.info(f"PDF document created: {output_path}")
+        logger.info(f"PDF document created successfully: {output_path}")
     except Exception as e:
         logger.error(f"Error building PDF document: {str(e)}")
         raise

@@ -1,139 +1,93 @@
 import os
 from typing import Dict, List, Any
-import asyncio
 import logging
 import json
-import httpx
-import random
-import time
-from openai import AsyncOpenAI  # Import AsyncOpenAI client
+from openai import AsyncOpenAI
+import asyncio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configurações de rate limiting e retry
-MAX_RETRIES = 5
-INITIAL_RETRY_DELAY = 1  # segundos
-MAX_RETRY_DELAY = 60  # segundos
-
-# Não inicializa o cliente globalmente
-# client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-async def translate_text_with_retry(text: str, target_language: str) -> str:
-    """
-    Translate text with retry logic to handle rate limits and network issues.
-    
-    Args:
-        text: The text to translate
-        target_language: The target language for translation
-    
-    Returns:
-        The translated text
-    """
-    retry_count = 0
-    retry_delay = INITIAL_RETRY_DELAY
-    
-    while retry_count < MAX_RETRIES:
-        try:
-            return await translate_text(text, target_language)
-        except RuntimeError as e:
-            error_message = str(e)
-            
-            # Network or rate limit errors should be retried
-            if "Network connection issue" in error_message or "Rate limit exceeded" in error_message:
-                retry_count += 1
-                if retry_count >= MAX_RETRIES:
-                    logger.error(f"Maximum retries ({MAX_RETRIES}) reached. Giving up.")
-                    raise RuntimeError(f"Failed after {MAX_RETRIES} retries: {error_message}")
-                
-                # Apply exponential backoff with jitter
-                jitter = random.uniform(0, 0.1 * retry_delay)
-                sleep_time = min(retry_delay + jitter, MAX_RETRY_DELAY)
-                
-                logger.warning(f"Error occurred, retrying in {sleep_time:.2f} seconds (retry {retry_count}/{MAX_RETRIES}): {error_message}")
-                await asyncio.sleep(sleep_time)
-                
-                # Increase delay for next retry
-                retry_delay = min(retry_delay * 2, MAX_RETRY_DELAY)
-            else:
-                # Other errors should not be retried
-                logger.error(f"Non-retryable error: {error_message}")
-                raise
-        except Exception as e:
-            logger.error(f"Unexpected error in translation: {str(e)}")
-            raise RuntimeError(f"Unexpected error in translation: {str(e)}")
-
-
-async def translate_text(text: str, target_language: str) -> str:
+async def translate_text(text: str, target_language: str, max_retries: int = 3) -> str:
     """
     Translate text using OpenAI GPT-4o-mini via official client.
+    Includes basic retry logic for API errors.
     
     Args:
         text: The text to translate
         target_language: The target language for translation
+        max_retries: Maximum number of retry attempts for API errors
     
     Returns:
         The translated text
     """
-    try:
-        # Get API key from environment
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("API key não encontrada. Verifique o arquivo .env")
-        
-        # Log key format for debugging (only first/last few characters)
-        key_start = api_key[:8]
-        key_end = api_key[-4:] if len(api_key) > 8 else ""
-        logger.info(f"Using API key format: {key_start}...{key_end}")
-        
-        # Use the official AsyncOpenAI client with increased timeout
-        client = AsyncOpenAI(
-            api_key=api_key,
-            timeout=120.0,  # Increase timeout to 120 seconds
-            max_retries=3   # Add automatic retries
-        )
-        
-        # Log request parameters
-        logger.info(f"API Request - Model: gpt-4o-mini, Target language: {target_language}, Text length: {len(text)} chars")
-        
-        # Ensure text is not empty
-        if not text.strip():
-            logger.warning("Empty text provided for translation")
-            return ""
-            
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": f"You are a professional translator. Translate the following text from English to {target_language} while preserving paragraph breaks, formatting, and the original meaning as accurately as possible."},
-                {"role": "user", "content": text}
-            ],
-            temperature=0.3,
-            max_tokens=2000  # Reduced from 4000 to avoid potential limits
-        )
-        
-        # Extract the translated text from the response
-        translated_text = response.choices[0].message.content
-        logger.info(f"Translation successful, received {len(translated_text)} chars")
-        return translated_text.strip()
+    retries = 0
+    last_error = None
     
-    except Exception as e:
-        import traceback
-        logger.error(f"Translation error: {str(e)}\n{traceback.format_exc()}")
-        # Provide more descriptive error
-        if "ReadError" in str(e) or "BrokenResourceError" in str(e):
-            raise RuntimeError(f"Network connection issue with OpenAI API: {str(e)}")
-        elif "AuthenticationError" in str(e):
-            raise RuntimeError(f"Authentication error with OpenAI API. Check your API key format.")
-        elif "RateLimitError" in str(e):
-            raise RuntimeError(f"Rate limit exceeded with OpenAI API. Try again later.")
-        else:
-            raise RuntimeError(f"Failed to translate text: {str(e)}")
+    while retries <= max_retries:
+        try:
+            # Get API key from environment
+            api_key = os.environ.get("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("API key não encontrada. Verifique o arquivo .env")
+            
+            # Log key format for debugging (only first/last few characters)
+            key_start = api_key[:8]
+            key_end = api_key[-4:] if len(api_key) > 8 else ""
+            logger.info(f"Using API key format: {key_start}...{key_end}")
+            
+            # Use the official AsyncOpenAI client
+            client = AsyncOpenAI(
+                api_key=api_key,
+                timeout=120.0
+            )
+            
+            # Log request parameters
+            logger.info(f"API Request - Model: gpt-4o-mini, Target language: {target_language}, Text length: {len(text)} chars")
+            
+            # Ensure text is not empty
+            if not text.strip():
+                logger.warning("Empty text provided for translation")
+                return ""
+                
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": f"You are a professional translator. Translate the following text from English to {target_language} while preserving paragraph breaks, formatting, and the original meaning as accurately as possible."},
+                    {"role": "user", "content": text}
+                ],
+                temperature=0.3,
+                max_tokens=4000
+            )
+            
+            # Extract the translated text from the response
+            translated_text = response.choices[0].message.content
+            logger.info(f"Translation successful, received {len(translated_text)} chars")
+            return translated_text.strip()
+        
+        except Exception as e:
+            last_error = e
+            retries += 1
+            wait_time = 2 ** retries  # Exponential backoff: 2, 4, 8 seconds
+            
+            logger.warning(f"Translation error (attempt {retries}/{max_retries}): {str(e)}. Retrying in {wait_time} seconds...")
+            
+            if retries <= max_retries:
+                await asyncio.sleep(wait_time)
+            else:
+                # Log the final error
+                import traceback
+                logger.error(f"Translation failed after {max_retries} attempts. Last error: {str(last_error)}\n{traceback.format_exc()}")
+                raise RuntimeError(f"Translation error after {max_retries} attempts: {str(last_error)}")
+    
+    # This should never be reached due to the raise in the else clause above
+    raise RuntimeError(f"Unexpected error in translation retry logic")
 
 
 async def translate_chapter(chapter_content: str, target_language: str) -> str:
     """
-    Divide chapter into manageable chunks and translate each chunk.
+    Process entire chapter in a single request if possible, or process chunks in parallel.
     
     Args:
         chapter_content: The chapter content to translate
@@ -142,27 +96,31 @@ async def translate_chapter(chapter_content: str, target_language: str) -> str:
     Returns:
         The translated chapter
     """
-    # Approximate character limit per chunk (about 500 tokens)
-    chunk_size = 1500  # Reduced from 3000 to avoid timeout issues
+    # Use a larger chunk size to minimize chunking
+    chunk_size = 8000  # Significantly increased from original 1500
     
-    # Split chapter into chunks
+    # For small chapters, process in a single request
+    if len(chapter_content) <= chunk_size:
+        logger.info(f"Translating entire chapter as single unit ({len(chapter_content)} chars)")
+        return await translate_text(chapter_content, target_language)
+    
+    # For large chapters, split into chunks and process concurrently
     chunks = []
     for i in range(0, len(chapter_content), chunk_size):
         chunks.append(chapter_content[i:i+chunk_size])
     
-    logger.info(f"Splitting chapter into {len(chunks)} chunks of {chunk_size} chars each")
+    logger.info(f"Splitting chapter into {len(chunks)} chunks for parallel processing")
     
-    # Translate each chunk with delay between requests to avoid rate limiting
-    translated_chunks = []
-    for i, chunk in enumerate(chunks):
-        # Add a small delay between chunks to avoid rate limiting
-        if i > 0:
-            await asyncio.sleep(2)  # Increased from 1 to 2 seconds delay between chunk translations
-            
-        logger.info(f"Translating chunk {i+1}/{len(chunks)}, size: {len(chunk)} chars")
-        translated_chunk = await translate_text_with_retry(chunk, target_language)
-        translated_chunks.append(translated_chunk)
-        logger.info(f"Completed chunk {i+1}/{len(chunks)}")
+    # Create tasks for translating each chunk concurrently
+    async def translate_chunk(chunk_index, chunk_text):
+        logger.info(f"Translating chunk {chunk_index+1}/{len(chunks)}, size: {len(chunk_text)} chars")
+        translated = await translate_text(chunk_text, target_language)
+        logger.info(f"Completed chunk {chunk_index+1}/{len(chunks)}")
+        return translated
+    
+    # Create and execute all translation tasks concurrently
+    tasks = [translate_chunk(i, chunk) for i, chunk in enumerate(chunks)]
+    translated_chunks = await asyncio.gather(*tasks)
     
     # Join chunks back together
     return "\n".join(translated_chunks)
@@ -170,7 +128,7 @@ async def translate_chapter(chapter_content: str, target_language: str) -> str:
 
 async def batch_translate_chapters(chapters: List[Dict[str, Any]], target_language: str) -> List[Dict[str, Any]]:
     """
-    Translate chapters sequentially to avoid rate limits.
+    Translate all chapters concurrently using asyncio.gather.
     
     Args:
         chapters: List of chapter dictionaries with 'id' and 'content' keys
@@ -179,22 +137,27 @@ async def batch_translate_chapters(chapters: List[Dict[str, Any]], target_langua
     Returns:
         List of translated chapter dictionaries
     """
-    # Process chapters sequentially to avoid hammering the API
-    translated_chapters = []
+    logger.info(f"Starting batch translation of {len(chapters)} chapters to {target_language}")
     
-    for chapter in chapters:
-        logger.info(f"Translating chapter {chapter['id']}")
+    # Create tasks for translating each chapter concurrently
+    async def translate_single_chapter(chapter):
+        chapter_id = chapter['id']
+        logger.info(f"Translating chapter {chapter_id}")
         translated_content = await translate_chapter(chapter["content"], target_language)
-        translated_chapters.append({
-            "id": chapter["id"],
+        logger.info(f"Completed translation of chapter {chapter_id}")
+        return {
+            "id": chapter_id,
             "content": translated_content
-        })
-        
-        # Add delay between chapters
-        if chapter != chapters[-1]:  # If not the last chapter
-            await asyncio.sleep(2)  # 2 second delay between chapters
+        }
+    
+    # Create a list of translation tasks
+    translation_tasks = [translate_single_chapter(chapter) for chapter in chapters]
+    
+    # Execute all translation tasks concurrently
+    results = await asyncio.gather(*translation_tasks)
     
     # Sort chapters by ID to maintain order
-    translated_chapters.sort(key=lambda x: x["id"])
+    translated_chapters = sorted(results, key=lambda x: x["id"])
     
+    logger.info(f"Completed batch translation of {len(chapters)} chapters")
     return translated_chapters 

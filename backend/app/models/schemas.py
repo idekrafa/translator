@@ -16,6 +16,7 @@ class BookTranslationRequest(BaseModel):
 
 class TranslationResponse(BaseModel):
     """Schema for translation response"""
+    job_id: str
     status: str
     message: str
     file_url: Optional[str] = None

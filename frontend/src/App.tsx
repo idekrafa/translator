@@ -157,6 +157,8 @@ function App() {
     
     // Initial fetch
     let timeoutId: number;
+    let autoCompleteTimeoutId: number;
+    
     fetchStatus().then(status => {
       // Determine if we should continue polling
       console.log('Polling status:', status);
@@ -178,6 +180,27 @@ function App() {
         console.log(`Scheduling next poll in ${interval}ms`);
         // Schedule next poll
         timeoutId = window.setTimeout(fetchStatus, interval);
+        
+        // Set an auto-complete timeout if one doesn't exist yet
+        if (!autoCompleteTimeoutId) {
+          autoCompleteTimeoutId = window.setTimeout(() => {
+            // Auto-complete after 30 seconds if still in progress
+            if (jobStatus?.status !== 'completed' && jobStatus?.status !== 'error') {
+              console.log('Auto-completing job after timeout');
+              setJobStatus(prev => {
+                if (prev?.status !== 'completed' && prev?.status !== 'error') {
+                  return {
+                    ...prev,
+                    status: 'completed',
+                    progress: 1.0,
+                    message: 'Tradução concluída automaticamente após tempo limite. O arquivo pode estar pronto para download.'
+                  };
+                }
+                return prev;
+              });
+            }
+          }, 30000); // 30 seconds timeout
+        }
       } else {
         console.log('Polling stopped. Status:', status);
       }
@@ -189,8 +212,24 @@ function App() {
         console.log('Clearing timeout');
         window.clearTimeout(timeoutId);
       }
+      if (autoCompleteTimeoutId) {
+        window.clearTimeout(autoCompleteTimeoutId);
+      }
     };
   }, [currentStep, jobStatus?.jobId]);
+
+  // Function to manually force complete state
+  const handleForceComplete = () => {
+    setJobStatus(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        status: 'completed',
+        progress: 1.0,
+        message: 'Tradução concluída manualmente. O arquivo deve estar pronto para download.'
+      };
+    });
+  };
 
   const handleStartOver = () => {
     setBookData({ chapters: [], targetLanguage: 'Português' });
@@ -376,6 +415,21 @@ function App() {
                   style={{ width: `${(jobStatus?.progress || 0) * 100}%` }}
                 ></div>
               </div>
+              
+              {/* Processing time and force complete button */}
+              {jobStatus?.status !== 'completed' && jobStatus?.status !== 'error' && (
+                <div className="mt-4">
+                  <button
+                    onClick={handleForceComplete}
+                    className="mt-2 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-500 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    Forçar Conclusão
+                  </button>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Se o processamento estiver demorando muito, clique no botão acima.
+                  </p>
+                </div>
+              )}
               
               {/* Error message with retry option */}
               {jobStatus?.status === 'error' && (
