@@ -2,8 +2,8 @@ import os
 from typing import Dict, List, Any
 import logging
 import json
-from openai import AsyncOpenAI
 import asyncio
+from .openai_client import translate_with_openai
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -11,8 +11,7 @@ logger = logging.getLogger(__name__)
 
 async def translate_text(text: str, target_language: str, max_retries: int = 3) -> str:
     """
-    Translate text using OpenAI GPT-4o-mini via official client.
-    Includes basic retry logic for API errors.
+    Translate text using OpenAI with retry logic.
     
     Args:
         text: The text to translate
@@ -27,45 +26,13 @@ async def translate_text(text: str, target_language: str, max_retries: int = 3) 
     
     while retries <= max_retries:
         try:
-            # Get API key from environment
-            api_key = os.environ.get("OPENAI_API_KEY")
-            if not api_key:
-                raise ValueError("API key não encontrada. Verifique o arquivo .env")
-            
-            # Log key format for debugging (only first/last few characters)
-            key_start = api_key[:8]
-            key_end = api_key[-4:] if len(api_key) > 8 else ""
-            logger.info(f"Using API key format: {key_start}...{key_end}")
-            
-            # Use the official AsyncOpenAI client
-            client = AsyncOpenAI(
-                api_key=api_key,
-                timeout=120.0
-            )
-            
-            # Log request parameters
-            logger.info(f"API Request - Model: gpt-4o-mini, Target language: {target_language}, Text length: {len(text)} chars")
-            
-            # Ensure text is not empty
             if not text.strip():
                 logger.warning("Empty text provided for translation")
                 return ""
-                
-            response = await client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": f"You are a professional translator. Translate the following text from English to {target_language} while preserving paragraph breaks, formatting, and the original meaning as accurately as possible."},
-                    {"role": "user", "content": text}
-                ],
-                temperature=0.3,
-                max_tokens=4000
-            )
             
-            # Extract the translated text from the response
-            translated_text = response.choices[0].message.content
-            logger.info(f"Translation successful, received {len(translated_text)} chars")
-            return translated_text.strip()
-        
+            # Use our abstracted wrapper for OpenAI translation
+            return await translate_with_openai(text, target_language)
+            
         except Exception as e:
             last_error = e
             retries += 1
@@ -96,8 +63,8 @@ async def translate_chapter(chapter_content: str, target_language: str) -> str:
     Returns:
         The translated chapter
     """
-    # Use a larger chunk size to minimize chunking
-    chunk_size = 8000  # Significantly increased from original 1500
+    # Set optimal chunk size based on model context size
+    chunk_size = 4000  # Conservative value that works for all models
     
     # For small chapters, process in a single request
     if len(chapter_content) <= chunk_size:

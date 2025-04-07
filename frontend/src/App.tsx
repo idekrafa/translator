@@ -1,38 +1,34 @@
-import React, { useState, useEffect } from 'react';
-import { Book, Languages, ChevronRight, Upload, Settings, BookOpen, Download } from 'lucide-react';
-import { translateBook, getTranslationStatus, getDownloadUrl } from './api';
+import React, { useState, useEffect, ChangeEvent } from 'react';
+import './App.css';
+import { translateBook, getTranslationStatus, getDownloadUrl, uploadPdfForTranslation } from './api';
 
+// Basic interfaces
 interface Chapter {
   id: number;
   content: string;
 }
 
-interface BookData {
-  chapters: Chapter[];
-  targetLanguage: string;
-}
-
 function App() {
-  const [bookData, setBookData] = useState<BookData>({
-    chapters: [],
-    targetLanguage: 'Português'
+  // State
+  const [bookData, setBookData] = useState({
+    chapters: [{ id: 1, content: '' }],
+    targetLanguage: 'Português',
+    format: 'docx',
   });
   const [currentStep, setCurrentStep] = useState(1);
-  const [numChapters, setNumChapters] = useState<number>(1);
-  const [currentChapter, setCurrentChapter] = useState<number>(1);
-  const [chapterContent, setChapterContent] = useState<string>('');
-
-  // API integration states
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState(0);
+  const [translationComplete, setTranslationComplete] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatusUrl, setJobStatusUrl] = useState<string | null>(null);
+  const [currentChapter, setCurrentChapter] = useState(0);
+  const [totalChapters, setTotalChapters] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [jobStatus, setJobStatus] = useState<{
-    status: string;
-    progress: number;
-    message: string;
-    jobId?: string;
-  } | null>(null);
-  const [format, setFormat] = useState<string>('docx');
-
+  
+  // Available languages
   const languages = [
     'Português',
     'Espanhol',
@@ -44,423 +40,366 @@ function App() {
     'Coreano'
   ];
 
+  // Event handlers
   const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setBookData(prev => ({ ...prev, targetLanguage: e.target.value }));
+    setBookData({ ...bookData, targetLanguage: e.target.value });
   };
-
+  
   const handleFormatChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    setFormat(e.target.value);
+    setBookData({ ...bookData, format: e.target.value });
   };
-
-  const handleNumChaptersChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const num = parseInt(e.target.value);
-    if (num > 0 && num <= 100) {
-      setNumChapters(num);
-    }
-  };
-
-  const handleChapterContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setChapterContent(e.target.value);
-  };
-
-  const handleChapterSubmit = () => {
-    if (chapterContent.trim()) {
-      setBookData(prev => ({
-        ...prev,
-        chapters: [...prev.chapters, { id: currentChapter, content: chapterContent }]
-      }));
-
-      if (currentChapter < numChapters) {
-        setCurrentChapter(prev => prev + 1);
-        setChapterContent('');
-      } else {
-        submitTranslationJob();
-      }
-    }
-  };
-
-  const submitTranslationJob = async () => {
-    try {
-      setIsSubmitting(true);
-      setError(null);
-      
-      const response = await translateBook(
-        bookData.chapters, 
-        bookData.targetLanguage,
-        format
-      );
-      
-      // Extract job ID from the URL
-      const jobIdMatch = response.file_url?.match(/\/status\/([^\/]+)$/);
-      const jobId = jobIdMatch ? jobIdMatch[1] : undefined;
-      
-      setJobStatus({
-        status: response.status,
-        progress: 0,
-        message: response.message,
-        jobId
-      });
-      
-      setCurrentStep(3);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Poll for job status updates with variable interval based on status
-  useEffect(() => {
-    if (currentStep !== 3 || !jobStatus?.jobId) return;
-    
-    const statusUrl = `/api/translation/status/${jobStatus.jobId}`;
-    
-    // Function to fetch and update status
-    const fetchStatus = async () => {
-      try {
-        console.log('Fetching status for job:', jobStatus.jobId);
-        const progress = await getTranslationStatus(statusUrl);
-        
-        console.log('Status update:', progress);
-        
-        // Store the updated status
-        setJobStatus({
-          status: progress.status,
-          progress: progress.progress,
-          message: progress.message,
-          jobId: jobStatus.jobId
-        });
-        
-        return progress.status;
-      } catch (err) {
-        console.error('Error fetching job status:', err);
-        // If we get a 404, it means the job is not found - mark as error
-        if (err instanceof Error && err.message.includes('404')) {
-          setJobStatus(prev => ({
-            ...prev,
-            status: 'completed',
-            progress: prev?.progress || 1.0,
-            message: 'Tradução concluída. O arquivo está pronto para download.'
-          }));
-          return 'completed';
-        } else {
-          setJobStatus(prev => ({
-            ...prev,
-            status: 'error',
-            progress: prev?.progress || 0,
-            message: err instanceof Error ? err.message : 'An unknown error occurred'
-          }));
-          return 'error';
-        }
-      }
-    };
-    
-    // Initial fetch
-    let timeoutId: number;
-    let autoCompleteTimeoutId: number;
-    
-    fetchStatus().then(status => {
-      // Determine if we should continue polling
-      console.log('Polling status:', status);
-      const shouldContinuePolling = 
-        status !== 'completed' && 
-        status !== 'error' && 
-        status !== 'failed';
-      
-      // If job is still in progress, schedule next poll
-      if (shouldContinuePolling) {
-        // Determine polling interval based on status
-        let interval = 3000; // default: 3 seconds
-        
-        if (status === 'translating' && jobStatus.message?.includes('Aguardando limite')) {
-          // If hitting rate limits, poll less frequently
-          interval = 10000; // 10 seconds
-        }
-        
-        console.log(`Scheduling next poll in ${interval}ms`);
-        // Schedule next poll
-        timeoutId = window.setTimeout(fetchStatus, interval);
-        
-        // Set an auto-complete timeout if one doesn't exist yet
-        if (!autoCompleteTimeoutId) {
-          autoCompleteTimeoutId = window.setTimeout(() => {
-            // Auto-complete after 30 seconds if still in progress
-            if (jobStatus?.status !== 'completed' && jobStatus?.status !== 'error') {
-              console.log('Auto-completing job after timeout');
-              setJobStatus(prev => {
-                if (prev?.status !== 'completed' && prev?.status !== 'error') {
-                  return {
-                    ...prev,
-                    status: 'completed',
-                    progress: 1.0,
-                    message: 'Tradução concluída automaticamente após tempo limite. O arquivo pode estar pronto para download.'
-                  };
-                }
-                return prev;
-              });
-            }
-          }, 30000); // 30 seconds timeout
-        }
-      } else {
-        console.log('Polling stopped. Status:', status);
-      }
-    });
-    
-    // Cleanup on unmount or status change
-    return () => {
-      if (timeoutId) {
-        console.log('Clearing timeout');
-        window.clearTimeout(timeoutId);
-      }
-      if (autoCompleteTimeoutId) {
-        window.clearTimeout(autoCompleteTimeoutId);
-      }
-    };
-  }, [currentStep, jobStatus?.jobId]);
-
-  // Function to manually force complete state
-  const handleForceComplete = () => {
-    setJobStatus(prev => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        status: 'completed',
-        progress: 1.0,
-        message: 'Tradução concluída manualmente. O arquivo deve estar pronto para download.'
-      };
+  
+  const handleChapterChange = (id: number, content: string) => {
+    setBookData({
+      ...bookData,
+      chapters: bookData.chapters.map(ch => 
+        ch.id === id ? { ...ch, content } : ch
+      ),
     });
   };
-
-  const handleStartOver = () => {
-    setBookData({ chapters: [], targetLanguage: 'Português' });
-    setCurrentStep(1);
-    setNumChapters(1);
-    setCurrentChapter(1);
-    setChapterContent('');
-    setJobStatus(null);
+  
+  const addChapter = () => {
+    const newId = bookData.chapters.length > 0 
+      ? Math.max(...bookData.chapters.map(ch => ch.id)) + 1 
+      : 1;
+    
+    setBookData({
+      ...bookData,
+      chapters: [...bookData.chapters, { id: newId, content: '' }],
+    });
+  };
+  
+  const removeChapter = (id: number) => {
+    if (bookData.chapters.length <= 1) return;
+    
+    setBookData({
+      ...bookData,
+      chapters: bookData.chapters.filter(ch => ch.id !== id),
+    });
+  };
+  
+  // File handlers
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || !files[0]) return;
+    
+    const file = files[0];
+    if (file.type !== 'application/pdf') {
+      setError('Por favor, carregue apenas arquivos PDF');
+      return;
+    }
+    
+    setSelectedFile(file);
     setError(null);
   };
-
-  const handleDownloadBook = () => {
-    if (jobStatus?.jobId) {
-      try {
-        const downloadUrl = getDownloadUrl(jobStatus.jobId);
-        console.log('Downloading from:', downloadUrl);
-        window.location.href = downloadUrl;
-      } catch (err) {
-        console.error('Error preparing download URL:', err);
-        setError('Erro ao preparar URL de download');
+  
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+  
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+  
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = e.dataTransfer.files;
+    if (!files || !files[0]) return;
+    
+    const file = files[0];
+    if (file.type !== 'application/pdf') {
+      setError('Por favor, carregue apenas arquivos PDF');
+      return;
+    }
+    
+    setSelectedFile(file);
+    setError(null);
+  };
+  
+  // Submit for translation
+  const submitTranslation = async () => {
+    try {
+      setIsTranslating(true);
+      setCurrentStep(3);
+      setError(null);
+      
+      if (selectedFile) {
+        // PDF translation
+        const response = await uploadPdfForTranslation(
+          selectedFile,
+          bookData.targetLanguage,
+          bookData.format
+        );
+        
+        setJobStatusUrl(response.file_url);
+        setJobId(response.job_id || null);
+      } else {
+        // Chapter translation
+        if (bookData.chapters.some(ch => !ch.content.trim())) {
+          setError('Por favor, preencha todos os capítulos');
+          setIsTranslating(false);
+          return;
+        }
+        
+        const response = await translateBook(
+          bookData.chapters,
+          bookData.targetLanguage,
+          bookData.format
+        );
+        
+        setJobStatusUrl(response.file_url);
+        setJobId(response.job_id || null);
       }
-    } else {
-      setError('ID do trabalho não disponível para download');
+    } catch (err) {
+      console.error('Translation error:', err);
+      setIsTranslating(false);
+      setError(err instanceof Error ? err.message : 'Erro ao iniciar tradução');
     }
   };
+  
+  // Reset everything
+  const resetApp = () => {
+    setBookData({
+      chapters: [{ id: 1, content: '' }],
+      targetLanguage: 'Português',
+      format: 'docx',
+    });
+    setCurrentStep(1);
+    setSelectedFile(null);
+    setIsTranslating(false);
+    setTranslationProgress(0);
+    setTranslationComplete(false);
+    setJobId(null);
+    setJobStatusUrl(null);
+    setCurrentChapter(0);
+    setTotalChapters(0);
+    setStatusMessage('');
+    setError(null);
+  };
+  
+  // Download translated document
+  const downloadTranslation = () => {
+    if (!jobId) return;
+    
+    const downloadUrl = getDownloadUrl(jobId);
+    window.location.href = downloadUrl;
+  };
+  
+  // Poll for status
+  useEffect(() => {
+    if (currentStep !== 3 || !jobStatusUrl) return;
+    
+    let timeoutId: number;
+    
+    const checkStatus = async () => {
+      try {
+        const status = await getTranslationStatus(jobStatusUrl);
+        
+        setTranslationProgress(status.progress);
+        setStatusMessage(status.message);
+        setCurrentChapter(status.current_chapter);
+        setTotalChapters(status.total_chapters);
+        
+        if (status.status === 'completed') {
+          setTranslationComplete(true);
+        } else {
+          timeoutId = window.setTimeout(checkStatus, 3000);
+        }
+      } catch (err) {
+        console.error('Status check error:', err);
+        setTranslationComplete(true);
+      }
+    };
+    
+    checkStatus();
+    
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [currentStep, jobStatusUrl]);
 
+  // Main component render
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
-      <nav className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Book className="h-6 w-6 text-indigo-600" />
-              <span className="text-xl font-semibold text-gray-900">Tradutor de Livros</span>
-            </div>
-            <div className="flex items-center space-x-4">
-              <Settings className="h-5 w-5 text-gray-500 cursor-pointer hover:text-gray-700" />
-              <button
-                onClick={handleStartOver}
-                className="text-sm text-gray-500 hover:text-gray-700"
-              >
-                Recomeçar
-              </button>
-            </div>
+    <div className="container">
+      <h1 className="title">Tradutor de Livros</h1>
+      
+      {/* Step 1: Configuration */}
+      {currentStep === 1 && (
+        <div className="step-container">
+          <h2>Configurações</h2>
+          
+          <div className="form-group">
+            <label>Idioma de destino</label>
+            <select value={bookData.targetLanguage} onChange={handleLanguageChange}>
+              {languages.map(lang => (
+                <option key={lang} value={lang}>{lang}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="form-group">
+            <label>Formato de saída</label>
+            <select value={bookData.format} onChange={handleFormatChange}>
+              <option value="docx">DOCX</option>
+              <option value="pdf">PDF</option>
+            </select>
+          </div>
+          
+          <div className="button-group">
+            <button className="button primary" onClick={() => setCurrentStep(2)}>
+              Inserir capítulos manualmente
+            </button>
+            
+            <button className="button secondary" onClick={() => setCurrentStep(4)}>
+              Carregar PDF
+            </button>
           </div>
         </div>
-      </nav>
-
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          {/* Progress Steps */}
-          <div className="flex items-center justify-between mb-8">
-            <div className={`flex items-center ${currentStep >= 1 ? 'text-indigo-600' : 'text-gray-400'}`}>
-              <div className="w-8 h-8 rounded-full border-2 flex items-center justify-center">
-                1
-              </div>
-              <span className="ml-2">Configuração</span>
-            </div>
-            <ChevronRight className="w-5 h-5 text-gray-400" />
-            <div className={`flex items-center ${currentStep >= 2 ? 'text-indigo-600' : 'text-gray-400'}`}>
-              <div className="w-8 h-8 rounded-full border-2 flex items-center justify-center">
-                2
-              </div>
-              <span className="ml-2">Conteúdo</span>
-            </div>
-            <ChevronRight className="w-5 h-5 text-gray-400" />
-            <div className={`flex items-center ${currentStep === 3 ? 'text-indigo-600' : 'text-gray-400'}`}>
-              <div className="w-8 h-8 rounded-full border-2 flex items-center justify-center">
-                3
-              </div>
-              <span className="ml-2">Processamento</span>
-            </div>
+      )}
+      
+      {/* Step 2: Chapter Input */}
+      {currentStep === 2 && (
+        <div className="step-container">
+          <div className="header">
+            <h2>Digite os capítulos do livro</h2>
+            <button className="button small" onClick={() => setCurrentStep(1)}>
+              Voltar
+            </button>
           </div>
-
-          {/* Error message if any */}
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 rounded-md">
-              {error}
-            </div>
-          )}
-
-          {/* Step 1: Initial Setup */}
-          {currentStep === 1 && (
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Idioma de Destino
-                </label>
-                <select
-                  value={bookData.targetLanguage}
-                  onChange={handleLanguageChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                  {languages.map(lang => (
-                    <option key={lang} value={lang}>{lang}</option>
-                  ))}
-                </select>
+          
+          {bookData.chapters.map((chapter, idx) => (
+            <div key={chapter.id} className="chapter-container">
+              <div className="chapter-header">
+                <span className="chapter-title">Capítulo {chapter.id}</span>
+                {bookData.chapters.length > 1 && (
+                  <button
+                    className="button small danger"
+                    onClick={() => removeChapter(chapter.id)}
+                  >
+                    Remover
+                  </button>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Formato do Documento
-                </label>
-                <select
-                  value={format}
-                  onChange={handleFormatChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                >
-                  <option value="docx">Microsoft Word (DOCX)</option>
-                  <option value="pdf">PDF</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Número de Capítulos
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={numChapters}
-                  onChange={handleNumChaptersChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                />
-              </div>
-              <button
-                onClick={() => setCurrentStep(2)}
-                className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors"
-              >
-                Continuar
-              </button>
-            </div>
-          )}
-
-          {/* Step 2: Chapter Content */}
-          {currentStep === 2 && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold text-gray-900">
-                  Capítulo {currentChapter} de {numChapters}
-                </h2>
-                <div className="text-sm text-gray-500">
-                  {Math.floor(chapterContent.length / 3000)} páginas estimadas
-                </div>
-              </div>
+              
               <textarea
-                value={chapterContent}
-                onChange={handleChapterContentChange}
-                placeholder="Digite o conteúdo do capítulo aqui (até 10 páginas)..."
-                className="w-full h-96 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                value={chapter.content}
+                onChange={(e) => handleChapterChange(chapter.id, e.target.value)}
+                placeholder={`Digite o conteúdo do capítulo ${chapter.id}`}
+                rows={8}
               />
-              <button
-                onClick={handleChapterSubmit}
-                disabled={isSubmitting || !chapterContent.trim()}
-                className="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors disabled:bg-indigo-300 disabled:cursor-not-allowed"
-              >
-                {currentChapter === numChapters ? 'Finalizar e Traduzir' : 'Próximo Capítulo'}
-              </button>
+              
+              {idx < bookData.chapters.length - 1 && <hr />}
             </div>
-          )}
-
-          {/* Step 3: Processing */}
-          {currentStep === 3 && (
-            <div className="text-center space-y-6">
-              <div className="flex justify-center">
-                <BookOpen className={`h-16 w-16 text-indigo-600 ${jobStatus?.status !== 'completed' ? 'animate-pulse' : ''}`} />
-              </div>
-              <h2 className="text-2xl font-semibold text-gray-900">
-                {jobStatus?.status === 'completed' ? 'Tradução Concluída!' : 
-                 jobStatus?.status === 'error' ? 'Erro na Tradução' :
-                 jobStatus?.message?.includes('Aguardando limite') ? 'Aguardando API' : 'Processando seu Livro'}
-              </h2>
-              <p className="text-gray-600">
-                {jobStatus?.message || `Traduzindo e formatando ${numChapters} capítulos para ${bookData.targetLanguage}...`}
-              </p>
-              
-              {/* Progress bar */}
-              <div className="w-full bg-gray-200 rounded-full h-2.5">
-                <div 
-                  className={`h-2.5 rounded-full transition-all duration-500 ${
-                    jobStatus?.status === 'error' ? 'bg-red-600' : 
-                    jobStatus?.message?.includes('Aguardando limite') ? 'bg-yellow-600' : 'bg-indigo-600'
-                  }`}
-                  style={{ width: `${(jobStatus?.progress || 0) * 100}%` }}
-                ></div>
-              </div>
-              
-              {/* Processing time and force complete button */}
-              {jobStatus?.status !== 'completed' && jobStatus?.status !== 'error' && (
-                <div className="mt-4">
-                  <button
-                    onClick={handleForceComplete}
-                    className="mt-2 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-500 hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    Forçar Conclusão
-                  </button>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Se o processamento estiver demorando muito, clique no botão acima.
-                  </p>
-                </div>
-              )}
-              
-              {/* Error message with retry option */}
-              {jobStatus?.status === 'error' && (
-                <div className="mt-4">
-                  <button
-                    onClick={handleStartOver}
-                    className="mt-2 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                  >
-                    Tentar Novamente
-                  </button>
-                </div>
-              )}
-              
-              {/* Download button - shown when completed or when the backend reports a PDF is available despite errors */}
-              {(jobStatus?.status === 'completed' || 
-                (jobStatus?.message && (
-                  jobStatus.message.includes('PDF document created') || 
-                  jobStatus.message.includes('Tradução concluída')
-                ))) && (
-                <button
-                  onClick={handleDownloadBook}
-                  className="mt-6 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                >
-                  <Download className="-ml-1 mr-2 h-5 w-5" />
-                  Baixar Livro Traduzido
-                </button>
-              )}
-            </div>
-          )}
+          ))}
+          
+          <button className="button small" onClick={addChapter}>
+            Adicionar Capítulo
+          </button>
+          
+          {error && <div className="error-message">{error}</div>}
+          
+          <div className="button-group">
+            <button className="button" onClick={() => setCurrentStep(1)}>Voltar</button>
+            <button
+              className="button primary"
+              onClick={submitTranslation}
+              disabled={isTranslating}
+            >
+              {isTranslating ? 'Iniciando...' : 'Traduzir Livro'}
+            </button>
+          </div>
         </div>
-      </main>
+      )}
+      
+      {/* Step 3: Translation Progress */}
+      {currentStep === 3 && (
+        <div className="step-container">
+          <h2>Progresso da Tradução</h2>
+          
+          <div className="progress-container">
+            <div 
+              className="progress-bar" 
+              style={{ width: `${translationProgress * 100}%` }}
+            />
+          </div>
+          
+          <p className="status-message">{statusMessage || 'Inicializando tradução...'}</p>
+          
+          {currentChapter > 0 && totalChapters > 0 && (
+            <p className="chapter-progress">Capítulo {currentChapter} de {totalChapters}</p>
+          )}
+          
+          {translationComplete && (
+            <button
+              className="button primary large"
+              onClick={downloadTranslation}
+            >
+              Baixar Tradução
+            </button>
+          )}
+          
+          <button className="button" onClick={resetApp}>Nova Tradução</button>
+        </div>
+      )}
+      
+      {/* Step 4: PDF Upload */}
+      {currentStep === 4 && (
+        <div className="step-container">
+          <h2>Carregar arquivo PDF</h2>
+          
+          <input
+            type="file"
+            id="fileInput"
+            onChange={handleFileChange}
+            accept="application/pdf"
+            style={{ display: 'none' }}
+          />
+          
+          <div
+            className={`dropzone ${isDragging ? 'dragging' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => document.getElementById('fileInput')?.click()}
+          >
+            <div className="dropzone-content">
+              <div className="upload-icon"></div>
+              
+              {selectedFile ? (
+                <div>
+                  <p className="file-name">{selectedFile.name}</p>
+                  <p className="file-size">({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)</p>
+                </div>
+              ) : (
+                <p>Clique ou arraste um arquivo PDF para carregar</p>
+              )}
+            </div>
+          </div>
+          
+          {selectedFile && (
+            <div className="success-message">
+              Arquivo selecionado: {selectedFile.name}
+            </div>
+          )}
+          
+          {error && <div className="error-message">{error}</div>}
+          
+          <div className="button-group">
+            <button className="button" onClick={() => setCurrentStep(1)}>Voltar</button>
+            <button
+              className="button primary"
+              disabled={!selectedFile || isTranslating}
+              onClick={submitTranslation}
+            >
+              {isTranslating ? 'Iniciando...' : 'Traduzir PDF'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

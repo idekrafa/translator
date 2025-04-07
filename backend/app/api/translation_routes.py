@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Create router
-router = APIRouter(prefix="/api/translation", tags=["translation"])
+translation_router = APIRouter(prefix="/api/translation", tags=["translation"])
 
 # Store for translation jobs
 translation_jobs: Dict[str, Dict[str, Any]] = {}
@@ -110,7 +110,7 @@ async def process_translation(
         translation_jobs[job_id]["message"] = f"Erro: {str(e)}"
 
 
-@router.post("/translate", response_model=TranslationResponse)
+@translation_router.post("/translate", response_model=TranslationResponse)
 async def translate_book(
     request: BookTranslationRequest,
     background_tasks: BackgroundTasks,
@@ -169,7 +169,7 @@ async def translate_book(
     )
 
 
-@router.get("/status/{job_id}", response_model=TranslationProgress)
+@translation_router.get("/status/{job_id}", response_model=TranslationProgress)
 async def get_translation_status(job_id: str):
     """
     Get status of a translation job.
@@ -191,7 +191,7 @@ async def get_translation_status(job_id: str):
     )
 
 
-@router.get("/download/{job_id}")
+@translation_router.get("/download/{job_id}")
 async def download_translated_book(job_id: str):
     """
     Download a completed translation job.

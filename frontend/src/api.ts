@@ -16,6 +16,7 @@ interface TranslationResponse {
   status: string;
   message: string;
   file_url: string | null;
+  job_id?: string;
 }
 
 interface TranslationProgress {
@@ -106,4 +107,35 @@ export async function getTranslationStatus(jobUrl: string): Promise<TranslationP
  */
 export function getDownloadUrl(jobId: string): string {
   return `${API_BASE_URL}/api/translation/download/${jobId}`;
+}
+
+/**
+ * Upload a PDF file for translation
+ */
+export async function uploadPdfForTranslation(
+  file: File,
+  targetLanguage: string,
+  outputFormat: string = 'docx'
+): Promise<TranslationResponse> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('target_language', targetLanguage);
+    formData.append('output_format', outputFormat);
+
+    const response = await fetch(`${API_BASE_URL}/api/upload/pdf`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Failed to upload PDF for translation');
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('PDF upload error:', error);
+    throw error;
+  }
 } 
