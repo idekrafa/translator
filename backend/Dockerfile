@@ -1,24 +1,28 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Instala pacotes de sistema necessários
+RUN apt-get update && apt-get install -y \
     build-essential \
+    libfreetype6-dev \
+    libjpeg-dev \
+    zlib1g-dev \
+    libxml2-dev \
+    libxslt1-dev \
+    curl \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Diretório de trabalho
+WORKDIR /app
 
-# Copy application code
+# Copia apenas o requirements.txt e instala dependências
+COPY requirements.txt .
+
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Copia o restante da aplicação
 COPY . .
 
-# Create output directory
-RUN mkdir -p output
-
-# Expose port
-EXPOSE 8000
-
-# Command to run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"] 
+# Comando padrão (ajuste conforme necessário)
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
