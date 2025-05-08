@@ -35,3 +35,5 @@ python-dotenv==1.0.0
 structlog==23.1.0
 tenacity==8.2.3
 click==8.1.7
+
+pydantic-settings
