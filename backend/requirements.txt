@@ -37,3 +37,4 @@ tenacity==8.2.3
 click==8.1.7
 
 pydantic-settings
+reportlab==3.6.12
