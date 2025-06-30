@@ -63,8 +63,8 @@ async def translate_chapter(chapter_content: str, target_language: str) -> str:
     Returns:
         The translated chapter
     """
-    # Set optimal chunk size based on model context size
-    chunk_size = 4000  # Conservative value that works for all models
+    # Set optimal chunk size for modern OpenAI models (higher limit than before)
+    chunk_size = 4000  # Conservative value that works well with gpt-4 and gpt-3.5-turbo
     
     # For small chapters, process in a single request
     if len(chapter_content) <= chunk_size:

@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import List, Dict, Any
-import PyPDF2
+from pypdf import PdfReader
 from pathlib import Path
 
 # Configure logging
@@ -29,7 +29,7 @@ async def extract_text_from_pdf(file_path: str) -> List[Dict[str, Any]]:
     
     try:
         with open(file_path, 'rb') as pdf_file:
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
+            pdf_reader = PdfReader(pdf_file)
             
             # Get total number of pages
             num_pages = len(pdf_reader.pages)

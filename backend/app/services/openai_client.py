@@ -60,9 +60,9 @@ class OpenAIClient:
     async def create_chat_completion(
         self,
         messages: List[Dict[str, str]],
-        model: str = "gpt-3.5-turbo",
-        temperature: float = 0.7,
-        max_tokens: int = 1000,
+        model: str = "gpt-4-turbo-preview",
+        temperature: float = 0.3,
+        max_tokens: int = 4000,
         **kwargs
     ) -> str:
         """
@@ -70,9 +70,9 @@ class OpenAIClient:
         
         Args:
             messages: List of message dictionaries with 'role' and 'content'
-            model: The model to use (default: gpt-3.5-turbo)
-            temperature: Sampling temperature (default: 0.7)
-            max_tokens: Maximum tokens to generate (default: 1000)
+            model: The model to use (default: gpt-4-turbo-preview for better translation quality)
+            temperature: Sampling temperature (default: 0.3 for consistent translations)
+            max_tokens: Maximum tokens to generate (default: 4000 for longer content)
             **kwargs: Additional parameters to pass to the API
             
         Returns:
@@ -119,7 +119,7 @@ async def get_client() -> OpenAIClient:
 async def translate_with_openai(
     text: str, 
     target_language: str, 
-    model: str = "gpt-3.5-turbo"
+    model: str = "gpt-4-turbo-preview"
 ) -> str:
     """
     Translate text using OpenAI's chat models.
@@ -127,7 +127,7 @@ async def translate_with_openai(
     Args:
         text: The text to translate
         target_language: The target language for translation
-        model: The model to use (default: gpt-3.5-turbo)
+        model: The model to use (default: gpt-4-turbo-preview for better quality)
         
     Returns:
         The translated text
@@ -143,7 +143,15 @@ async def translate_with_openai(
     messages = [
         {
             "role": "system", 
-            "content": f"You are a professional translator. Translate the following text from English to {target_language} while preserving paragraph breaks, formatting, and the original meaning as accurately as possible."
+            "content": f"""You are a professional translator specializing in literary translation. 
+            Translate the following text from English to {target_language} while:
+            - Preserving the original meaning and tone
+            - Maintaining paragraph breaks and formatting
+            - Using natural, fluent language in {target_language}
+            - Keeping proper nouns and technical terms appropriate for the context
+            - Ensuring consistency in terminology throughout
+            
+            Provide only the translation without any additional commentary."""
         },
         {
             "role": "user", 

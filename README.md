@@ -1,116 +1,290 @@
-# Tradutor de Livros
+# 📚 Book Translator
 
-Aplicação para tradução e diagramação de textos de livros, utilizando GPT-4 para tradução e formatação específica para impressão.
+A modern, full-stack application for translating books and PDF documents using OpenAI's language models, with professional formatting for print publication.
 
-## Funcionalidades
+## ✨ Features
 
-- Tradução de textos do inglês para diversos idiomas usando GPT-4
-- Formatação em layout de livro 6x9 polegadas
-- Letra capitular no início dos capítulos
-- Paginação estilo livro de capa dura
-- Geração de documentos em formato DOCX e PDF
-- Interface web amigável
+- **📄 PDF Processing**: Upload and process PDF files for automatic translation
+- **📖 Chapter-based Translation**: Manual chapter input with professional formatting
+- **🔄 Asynchronous Processing**: Real-time progress tracking for translations
+- **📑 Multiple Formats**: Generate DOCX and PDF outputs with book-style formatting
+- **🌍 Multi-language Support**: Translate to Portuguese, Spanish, French, German, Italian, Japanese, Chinese, Korean
+- **🎨 Professional Layout**: 6x9 inch book format with proper typography and pagination
+- **⚡ Modern Tech Stack**: FastAPI backend, React frontend, Docker deployment
+- **🧪 Comprehensive Testing**: Unit, integration, and end-to-end tests
 
-## Estrutura do Projeto
+## 🏗️ Architecture
 
-O projeto é dividido em duas partes principais:
+- **Backend**: FastAPI + Python with OpenAI GPT-4 integration
+- **Frontend**: React + TypeScript with Tailwind CSS
+- **Processing**: Async job queue with real-time progress updates
+- **Storage**: Local file system with configurable output directory
+- **Deployment**: Docker Compose for easy containerization
 
-- **Backend**: API desenvolvida em Python com FastAPI
-- **Frontend**: Interface de usuário desenvolvida com React, TypeScript e Tailwind CSS
+## 🚀 Quick Start
 
-## Requisitos
+### Prerequisites
 
-- Python 3.8+
+- Python 3.8+ 
 - Node.js 18+
-- API key da OpenAI
-- Docker e Docker Compose (opcional, para implantação com contêineres)
+- OpenAI API key ([Get one here](https://platform.openai.com/api-keys))
+- Docker & Docker Compose (optional, for containerized deployment)
 
-## Instalação
+### Automated Setup
 
-### Configuração do Backend
+```bash
+# Clone the repository
+git clone <your-repo-url>
+cd translator
 
-1. Navegue até a pasta `backend`:
-   ```bash
-   cd backend
-   ```
+# Run the setup script (handles everything automatically)
+chmod +x setup-project.sh
+./setup-project.sh
 
-2. Crie um ambiente virtual Python:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate   # No Windows: venv\Scripts\activate
-   ```
+# Add your OpenAI API key to backend/.env
+# Then start the application
+./start-dev.sh
+```
 
-3. Instale as dependências:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### Manual Setup
 
-4. Crie um arquivo `.env` com sua API key da OpenAI:
-   ```
-   OPENAI_API_KEY=seu_api_key_aqui
-   ```
+<details>
+<summary>Click to expand manual setup instructions</summary>
 
-### Configuração do Frontend
+#### Backend Setup
 
-1. Navegue até a pasta `frontend`:
-   ```bash
-   cd frontend
-   ```
+```bash
+cd backend
 
-2. Instale as dependências:
-   ```bash
-   npm install
-   ```
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-## Execução
+# Install dependencies
+pip install -r requirements.txt
 
-### Desenvolvimento
+# Create .env file
+cp .env.example .env  # Add your OPENAI_API_KEY
 
-1. Inicie o backend:
-   ```bash
-   cd backend
-   ./dev.sh
-   ```
+# Create necessary directories
+mkdir -p output temp_uploads
+```
 
-2. Em outro terminal, inicie o frontend:
-   ```bash
-   cd frontend
-   npm run dev
-   ```
+#### Frontend Setup
 
-3. Acesse a aplicação em http://localhost:5173
+```bash
+cd frontend
 
-### Com Docker Compose
+# Install dependencies
+npm install
 
-1. Configure sua API key da OpenAI no ambiente:
-   ```bash
-   export OPENAI_API_KEY=seu_api_key_aqui
-   ```
+# Start development server
+npm run dev
+```
 
-2. Inicie os serviços:
-   ```bash
-   docker-compose up -d
-   ```
+</details>
 
-3. Acesse a aplicação em http://localhost:3000
+## 🎯 Usage
 
-## Uso
+### Web Interface
 
-1. Na tela inicial, configure o idioma de destino e o número de capítulos
-2. Para cada capítulo, insira o conteúdo em inglês (até 10 páginas por capítulo)
-3. Após finalizar, o sistema irá processar os textos, traduzir e formatar
-4. Ao finalizar, você poderá baixar o documento formatado
+1. **Access the application**: http://localhost:3000
+2. **Choose input method**:
+   - Upload a PDF file for automatic text extraction
+   - Manually enter book chapters
+3. **Configure translation**:
+   - Select target language
+   - Choose output format (DOCX/PDF)
+4. **Monitor progress**: Real-time translation status
+5. **Download result**: Professional book-format document
 
-## Especificações Técnicas
+### API Usage
 
-- **Tamanho de página**: 6 x 9 polegadas
-- **Fonte**: Georgia, tamanho 11
-- **Letra capitular**: Primeira letra do capítulo em destaque
-- **Número do capítulo**: Tamanho 30, posicionado à direita
-- **Paginação**: Números à esquerda em páginas pares e à direita em páginas ímpares
+The application provides a REST API for programmatic access:
 
-## Limitações
+```bash
+# API Documentation
+curl http://localhost:8000/docs
 
-- Processamento de no máximo 10 páginas por capítulo
-- Tempo de processamento proporcional ao tamanho do texto
-- Requer conexão com a internet para acessar a API do OpenAI
+# Translate chapters
+curl -X POST "http://localhost:8000/api/translation/translate" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "chapters": [{"id": 1, "content": "Chapter content..."}],
+    "target_language": "Português"
+  }'
+
+# Upload PDF
+curl -X POST "http://localhost:8000/api/upload/pdf" \
+  -F "file=@book.pdf" \
+  -F "target_language=Português" \
+  -F "output_format=docx"
+```
+
+## 🛠️ Development
+
+### Available Scripts
+
+```bash
+./start-dev.sh       # Start both backend and frontend
+./start-backend.sh   # Start only backend (port 8000)
+./start-frontend.sh  # Start only frontend (port 3000)
+./run-tests.sh       # Run all backend tests
+./run-tests.sh --unit # Run only unit tests
+```
+
+### Project Structure
+
+```
+translator/
+├── backend/                 # FastAPI application
+│   ├── app/
+│   │   ├── api/            # API routes
+│   │   │   ├── core/           # Configuration & middleware
+│   │   │   ├── models/         # Data models
+│   │   │   ├── services/       # Business logic
+│   │   │   └── utils/          # Utility functions
+│   │   ├── tests/              # Test suite
+│   │   └── requirements.txt    # Python dependencies
+│   ├── frontend/               # React application
+│   │   ├── src/
+│   │   │   ├── App.tsx         # Main component
+│   │   │   ├── api.ts          # API client
+│   │   │   └── main.tsx        # Entry point
+│   │   └── package.json        # Node.js dependencies
+│   ├── docker-compose.yml      # Container orchestration
+│   └── setup-project.sh        # Automated setup script
+```
+
+### Testing
+
+```bash
+# Run all tests
+./run-tests.sh
+
+# Run with coverage
+./run-tests.sh --coverage
+
+# Run specific test categories
+./run-tests.sh --unit
+./run-tests.sh --api
+./run-tests.sh --e2e
+```
+
+## 🐳 Docker Deployment
+
+```bash
+# Set your OpenAI API key
+export OPENAI_API_KEY=your_api_key_here
+
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+Access the application at:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- API Documentation: http://localhost:8000/docs
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+Create `backend/.env`:
+
+```bash
+# Required
+OPENAI_API_KEY=your_openai_api_key
+
+# Optional
+PORT=8000
+LOG_LEVEL=INFO
+MAX_FILE_SIZE=10485760  # 10MB
+MAX_CHAPTERS=100
+OUTPUT_DIR=output
+USE_BACKGROUND_TASKS=1
+```
+
+### Translation Settings
+
+- **Default Model**: GPT-4 Turbo (better quality)
+- **Chunk Size**: 4000 characters (optimal for long content)
+- **Temperature**: 0.3 (consistent translations)
+- **Concurrent Processing**: Parallel chapter translation
+
+## 📋 Document Specifications
+
+Generated documents follow professional book standards:
+
+- **Page Size**: 6 × 9 inches
+- **Typography**: Georgia font, 11pt body text
+- **Layout**: Drop caps, right-aligned chapter numbers
+- **Pagination**: Alternating left/right page numbers
+- **Margins**: Optimized for binding (0.75" inside, 0.5" outside)
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**OpenAI API Errors**
+```bash
+# Check your API key
+cat backend/.env | grep OPENAI_API_KEY
+
+# Verify API quota
+curl -H "Authorization: Bearer your_api_key" \
+  "https://api.openai.com/v1/usage"
+```
+
+**Port Conflicts**
+```bash
+# Check if ports are in use
+lsof -i :3000  # Frontend
+lsof -i :8000  # Backend
+
+# The application will automatically try alternative ports
+```
+
+**Dependency Issues**
+```bash
+# Clean reinstall
+rm -rf backend/venv frontend/node_modules
+./setup-project.sh
+```
+
+### Performance Optimization
+
+- **Large PDFs**: Break into smaller files (< 10MB)
+- **Many Chapters**: Use batch processing API endpoints
+- **Memory Usage**: Monitor output directory size
+- **API Limits**: Implement custom rate limiting if needed
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Run tests (`./run-tests.sh`)
+5. Commit changes (`git commit -m 'Add amazing feature'`)
+6. Push to branch (`git push origin feature/amazing-feature`)
+7. Open a Pull Request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🆘 Support
+
+- **Documentation**: Check the `/docs` endpoint when backend is running
+- **Issues**: Create a GitHub issue with detailed reproduction steps
+- **API Reference**: Available at http://localhost:8000/docs
+
+---
+
+Built with ❤️ using FastAPI, React, and OpenAI GPT-4

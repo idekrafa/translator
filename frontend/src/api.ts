@@ -4,8 +4,8 @@ interface Chapter {
   content: string;
 }
 
-// API base URL - adjust this based on your deployment environment
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://translator-1-5392.onrender.com';
+// API base URL - use environment variable with local fallback
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 interface BookTranslationRequest {
   chapters: Chapter[];

@@ -18,16 +18,23 @@ class Settings(BaseSettings):
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
     
     # OpenAI API
-    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_API_KEY: str = ""
+    
+    # Server settings
+    PORT: int = 8000
+    LOG_LEVEL: str = "INFO"
+    RELOAD: bool = False
+    
+    # Application settings
+    USE_BACKGROUND_TASKS: int = 1
+    MAX_FILE_SIZE: int = 10485760  # 10MB in bytes
+    MAX_CHAPTERS: int = 100
     
     # Output directory
-    OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "output")
+    OUTPUT_DIR: str = "output"
     
     # Maximum pages per chapter
     MAX_PAGES_PER_CHAPTER: int = 10
-    
-    # Logging
-    LOG_LEVEL: str = "INFO"
 
     @field_validator("BACKEND_CORS_ORIGINS")
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> Union[List[str], str]:
@@ -46,6 +53,7 @@ class Settings(BaseSettings):
     class Config:
         case_sensitive = True
         env_file = ".env"
+        extra = "allow"  # Allow extra fields to prevent validation errors
 
 
 # Create settings instance
